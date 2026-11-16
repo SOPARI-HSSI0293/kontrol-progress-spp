@@ -145,7 +145,7 @@ function detail(id) {
   const r = D.requests.find(x => x.request_id === id), s = sla(r), opts = (ACT[r.status_progress] || []).filter(a => isA() || a[0] === U.role);
   const logs = D.logs.filter(l => l.request_id === id).reverse(), lastId = (D.logs.filter(l => l.request_id === id && !/^Edit Data/.test(l.action_title)).pop() || {}).log_id;
   const SL = {awal: 'Sales', eksternal: 'QC', acc: 'Sales', internal: 'QC'};
-  const FB = {'Create Request': r.file_awal_url, 'Kirim ke Customer': r.file_eksternal_url, 'Upload ACC Customer': r.file_acc_cust_url, 'Distributed ke Line': r.file_internal_url}, seen = {};
+  const FB = {'Created Request': r.file_awal_url, 'Distributed ke line': r.file_internal_url, 'Create Request': r.file_awal_url, 'Kirim ke Customer': r.file_eksternal_url, 'Upload ACC Customer': r.file_acc_cust_url, 'Distributed ke Line': r.file_internal_url}, seen = {};
   const docsOf = l => { const t = l.action_title, first = !seen[t]; seen[t] = 1; const d = parseDocs(l.file_url); return d.length ? d : (first && FB[t] ? [{n: 'Dokumen', u: FB[t]}] : []); };
   const kv = (k, v) => `<div><div class="text-xs text-slate-500">${k}</div><div>${esc(v || '-')}</div></div>`;
   openM(`<div class="flex justify-between items-start mb-3"><div><h2 class="text-lg font-semibold">${esc(r.request_id)}</h2><span class="bd ${CC[s.c]}">${esc(s.t)}</span></div><button class="btn g" onclick="closeM()">Tutup</button></div>
