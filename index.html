@@ -1,1 +1,206 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SPP Progress Control</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{font-family:'IBM Plex Sans',system-ui,sans-serif;background:#f3f8f4;color:#1f2a2e}
+.btn{padding:.5rem .9rem;border-radius:.375rem;font-weight:500;font-size:.875rem;background:#00853e;color:#fff}
+.btn:hover{background:#006b32}.btn.g{background:#fff;color:#1f2a2e;border:1px solid #cfd6d3}.btn.g:hover{background:#eef1ef}.btn.r{background:#b91c1c}
+.inp{width:100%;border:1px solid #cfd6d3;border-radius:.375rem;padding:.45rem .6rem;font-size:.875rem;background:#fff}
+.inp:focus,.btn:focus-visible{outline:2px solid #00853e;outline-offset:1px}
+.bd{display:inline-block;padding:.1rem .5rem;border-radius:.25rem;font-size:.75rem;font-weight:500}
+.dot{width:.6rem;height:.6rem;border-radius:9999px;background:#d5dbd8}.dot.on{background:#00853e}.dot.now{background:#00853e;box-shadow:0 0 0 3px #9fd8b6}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modal" class="hidden fixed inset-0 z-50 bg-black/40 overflow-y-auto p-3 sm:p-8" onclick="if(event.target===this)closeM()"><div id="mbox" class="bg-white rounded-lg max-w-3xl mx-auto p-5 shadow-xl"></div></div>
+<div id="toast" class="hidden fixed bottom-4 right-4 z-[60] px-4 py-2 rounded bg-slate-800 text-white text-sm"></div>
 
+<script>
+/* ====== KONFIGURASI: tempel URL Web App Google Apps Script (berakhiran /exec) ====== */
+const API_URL = 'PASTE_URL_WEB_APP_GAS_DI_SINI';
+
+const STEPS = ['1_REQUESTED','2_QC_EKSTERNAL','3_WAITING_CUST','4_CUST_APPROVED','5_QC_INTERNAL','6_DISTRIBUTED'];
+const LBL = {'1_REQUESTED':'1. Requested','2_QC_EKSTERNAL':'2. QC Eksternal','3_WAITING_CUST':'3. Waiting Customer','4_CUST_APPROVED':'4. Customer Approved','5_QC_INTERNAL':'5. QC Internal','6_DISTRIBUTED':'6. Distributed'};
+const MON = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+let U = JSON.parse(sessionStorage.getItem('spp_u') || 'null'), D = null, F = {q:'',s:'',t:''};
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const dshort = s => { if (!s) return '-'; const d = new Date(s.replace(' ', 'T')); return isNaN(d) ? s : d.getDate() + ' ' + MON[d.getMonth()] + ' ' + d.getFullYear(); };
+const todayStr = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+const idx = r => STEPS.indexOf(r.status_progress);
+const isA = () => U.role === 'Admin';
+function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.remove('hidden'); setTimeout(() => t.classList.add('hidden'), 3000); }
+function openM(h) { $('#mbox').innerHTML = h; $('#modal').classList.remove('hidden'); }
+function closeM() { $('#modal').classList.add('hidden'); }
+
+async function api(action, data = {}, auth = U && {username: U.username, password: U.password}) {
+  if (API_URL.startsWith('PASTE')) throw new Error('API_URL belum diisi di index.html');
+  const r = await fetch(API_URL, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify({action, auth, ...data})});
+  const j = await r.json(); if (!j.ok) throw new Error(j.error || 'Terjadi kesalahan'); return j;
+}
+async function run(fn, btn) {
+  if (btn) { btn.disabled = true; btn.dataset.t = btn.textContent; btn.textContent = 'Memproses…'; }
+  try { await fn(); } catch (e) { toast(e.message); } finally { if (btn) { btn.disabled = false; btn.textContent = btn.dataset.t; } }
+}
+function readFile(inp) {
+  return new Promise((res, rej) => {
+    const f = inp && inp.files[0]; if (!f) return res(null);
+    if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) return rej(new Error('Format file harus .pdf, .jpg, .jpeg, atau .png'));
+    if (f.size > 5 * 1024 * 1024) return rej(new Error('Ukuran file maksimal 5 MB'));
+    const fr = new FileReader(); fr.onload = () => res({name: f.name, mime: f.type, data: fr.result.split(',')[1]}); fr.onerror = () => rej(new Error('Gagal membaca file')); fr.readAsDataURL(f);
+  });
+}
+
+/* ---------- SLA ---------- */
+function sla(r) {
+  const i = idx(r), t = todayStr();
+  if (i <= 1) return {t: 'Target Eks: ' + dshort(r.target_eksternal_date), c: t > r.target_eksternal_date ? 'red' : 'green'};
+  if (i === 2) { const n = Math.floor((new Date(t) - new Date((r.tgl_kirim_customer || t).slice(0, 10))) / 864e5), w = n > D.settings.customer_reminder_days;
+    return {t: 'Wait Cust: ' + n + ' Hari' + (w ? ' · Perlu Follow-Up' : ''), c: w ? 'amber' : 'green'}; }
+  if (i <= 4) return {t: 'Target Int: ' + dshort(r.target_internal_date), c: t > r.target_internal_date ? 'red' : 'green'};
+  return {t: 'Done', c: 'green'};
+}
+const CC = {green: 'bg-emerald-100 text-emerald-800', red: 'bg-red-100 text-red-800', amber: 'bg-amber-100 text-amber-800'};
+
+/* ---------- Render ---------- */
+function render() { U ? (D ? dash() : (loadData(), $('#app').innerHTML = '<p class="p-10 text-center text-slate-500">Memuat data…</p>')) : loginView(); }
+
+function loginView() {
+  $('#app').innerHTML = `<div class="min-h-screen grid place-items-center p-4"><form id="lf" class="bg-white rounded-lg shadow p-6 w-full max-w-sm space-y-3">
+  <div class="text-center border-t-4 border-[#00853e] -mt-6 -mx-6 px-6 pt-6"><img src="logo.png" alt="Hanwa" class="h-14 mx-auto mb-2" onerror="this.style.display='none'"><div class="font-semibold text-[#00853e] leading-tight">PT HANWA STEEL SERVICE INDONESIA</div><h1 class="text-xl font-semibold mt-3">SPP Progress Control</h1><p class="text-sm text-slate-500">Masuk dengan akun yang diberikan Admin.</p></div>
+  <input id="lu" class="inp" placeholder="Username" autocomplete="username" required>
+  <input id="lp" type="password" class="inp" placeholder="Password" autocomplete="current-password" required>
+  <button class="btn w-full">Masuk</button></form></div>`;
+  $('#lf').onsubmit = e => { e.preventDefault(); run(async () => {
+    const a = {username: $('#lu').value, password: $('#lp').value}, j = await api('login', {}, a);
+    U = {...j.user, username: a.username.trim().toLowerCase(), password: a.password}; sessionStorage.setItem('spp_u', JSON.stringify(U)); render();
+  }, e.submitter); };
+}
+async function loadData() { try { D = await api('getDashboardData'); dash(); } catch (e) { toast(e.message); if (/login|password/i.test(e.message)) logout(); } }
+function logout() { sessionStorage.removeItem('spp_u'); U = null; D = null; render(); }
+
+function dash() {
+  const R = D.requests, c = f => R.filter(f).length;
+  const cards = [['Total Request', R.length], ['Proses QC', c(r => [1, 4].includes(idx(r)) || idx(r) === 0)], ['Menunggu Customer', c(r => idx(r) === 2)], ['Selesai (Distributed)', c(r => idx(r) === 5)]];
+  $('#app').innerHTML = `<header class="bg-[#0b3d24] text-white"><div class="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center gap-3">
+  <img src="logo.png" alt="Hanwa" class="h-9 w-auto bg-white rounded px-2 py-1" onerror="this.style.display='none'"><h1 class="font-semibold text-lg mr-auto">SPP Progress Control <span class="hidden sm:inline font-normal text-sm opacity-80">· PT Hanwa Steel Service Indonesia</span></h1>
+  <span class="text-sm">${esc(U.nama)} <span class="bd bg-[#dcf2e4] text-[#0b3d24] ml-1">${esc(U.role)}</span></span>
+  ${['Sales', 'Admin'].includes(U.role) ? '<button class="btn !bg-white !text-[#0b3d24]" onclick="reqForm()">+ Buat Request SPP</button>' : ''}
+  ${isA() ? '<button class="btn g" onclick="adminPanel()">Pengaturan / Users</button>' : ''}
+  <button class="btn g" onclick="logout()">Logout</button></div></header>
+  <main class="max-w-6xl mx-auto p-4 space-y-4">
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">${cards.map(x => `<div class="bg-white rounded-lg p-4 border border-slate-200"><div class="text-3xl font-semibold">${x[1]}</div><div class="text-sm text-slate-500">${x[0]}</div></div>`).join('')}</div>
+  <div class="flex flex-wrap gap-2"><input id="fq" class="inp !w-auto flex-1 min-w-[12rem]" placeholder="Cari No. Request, Customer, atau PIC" value="${esc(F.q)}">
+  <select id="fs" class="inp !w-auto"><option value="">Semua Status</option>${STEPS.map(s => `<option value="${s}" ${F.s === s ? 'selected' : ''}>${LBL[s]}</option>`).join('')}</select>
+  <select id="ft" class="inp !w-auto">${['', 'New', 'Revisi'].map(t => `<option value="${t}" ${F.t === t ? 'selected' : ''}>${t || 'Semua Type'}</option>`).join('')}</select>
+  <button class="btn g" onclick="loadData()">Muat ulang</button></div>
+  <div class="bg-white rounded-lg border border-slate-200 overflow-x-auto"><table class="w-full text-sm"><thead class="text-left text-slate-500 border-b"><tr>${['No. Request', 'Customer', 'Type', 'PIC Sales', 'Status Progress', 'Kontrol Target / SLA', ''].map(h => `<th class="p-3 font-medium">${h}</th>`).join('')}</tr></thead><tbody id="tb"></tbody></table></div></main>`;
+  const upd = () => { F = {q: $('#fq').value, s: $('#fs').value, t: $('#ft').value}; rows(); };
+  $('#fq').oninput = upd; $('#fs').onchange = upd; $('#ft').onchange = upd; rows();
+}
+function rows() {
+  const q = F.q.toLowerCase(), L = D.requests.filter(r => (!F.s || r.status_progress === F.s) && (!F.t || r.type === F.t) && (!q || [r.request_id, r.customer, r.pic_request].join(' ').toLowerCase().includes(q))).sort((a, b) => b.request_id.localeCompare(a.request_id));
+  $('#tb').innerHTML = L.length ? L.map(r => { const i = idx(r), s = sla(r);
+    return `<tr class="border-b last:border-0 align-top"><td class="p-3"><div class="font-medium">${esc(r.request_id)}</div><div class="text-xs text-slate-500">${dshort(r.tanggal_request)}</div></td>
+    <td class="p-3">${esc(r.customer)}</td><td class="p-3"><span class="bd ${r.type === 'Revisi' ? 'bg-orange-100 text-orange-800' : 'bg-blue-100 text-blue-800'}">${esc(r.type)}</span></td>
+    <td class="p-3">${esc(r.pic_request)}</td>
+    <td class="p-3"><div class="flex gap-1 mb-1">${STEPS.map((_, k) => `<span class="dot ${k < i ? 'on' : k === i ? 'now' : ''}"></span>`).join('')}</div><div class="text-xs">${LBL[r.status_progress]}</div></td>
+    <td class="p-3"><span class="bd ${CC[s.c]}">${esc(s.t)}</span></td><td class="p-3"><button class="btn g" onclick="detail('${r.request_id}')">Detail</button></td></tr>`; }).join('')
+    : '<tr><td colspan="7" class="p-8 text-center text-slate-500">Belum ada request yang cocok. Ubah filter atau buat request baru.</td></tr>';
+}
+
+/* ---------- Detail ---------- */
+const ACT = {'1_REQUESTED': [['QC', '2_QC_EKSTERNAL', 'Mulai proses SPP Eksternal']], '2_QC_EKSTERNAL': [['QC', '3_WAITING_CUST', 'SPP Eksternal selesai & di-ACC Atasan QC, serahkan ke Sales']],
+  '3_WAITING_CUST': [['Sales', '4_CUST_APPROVED', 'Customer menyetujui, teruskan ke QC'], ['Sales', '2_QC_EKSTERNAL', 'Customer menolak / minta revisi, kembalikan ke QC Eksternal']],
+  '4_CUST_APPROVED': [['QC', '5_QC_INTERNAL', 'Mulai susun SPP Internal']], '5_QC_INTERNAL': [['QC', '6_DISTRIBUTED', 'SPP Internal selesai & didistribusikan ke Line']]};
+function detail(id) {
+  const r = D.requests.find(x => x.request_id === id), s = sla(r), opts = (ACT[r.status_progress] || []).filter(a => isA() || a[0] === U.role);
+  const logs = D.logs.filter(l => l.request_id === id).sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  const f = (l, u) => `<div class="border rounded p-2 text-sm flex items-center justify-between gap-2"><span>${l}</span>${u ? `<a class="btn g" target="_blank" rel="noopener" href="${esc(u)}">Lihat / Download File</a>` : '<span class="text-slate-400">Belum ada</span>'}</div>`;
+  const kv = (k, v) => `<div><div class="text-xs text-slate-500">${k}</div><div>${esc(v || '-')}</div></div>`;
+  openM(`<div class="flex justify-between items-start mb-3"><div><h2 class="text-lg font-semibold">${esc(r.request_id)}</h2><span class="bd ${CC[s.c]}">${esc(s.t)}</span></div><button class="btn g" onclick="closeM()">Tutup</button></div>
+  <h3 class="font-semibold mb-2">Informasi Request</h3><div class="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm mb-2">
+  ${kv('Customer', r.customer)}${kv('Type', r.type)}${kv('PIC Sales', r.pic_request)}${kv('Status', LBL[r.status_progress])}${kv('Target Line', r.target_line)}${kv('Tanggal Request', dshort(r.tanggal_request))}
+  ${kv('Target Eksternal', dshort(r.target_eksternal_date))}${kv('Selesai Eksternal', dshort(r.tgl_selesai_eksternal))}${kv('Dikirim ke Customer', dshort(r.tgl_kirim_customer))}
+  ${kv('ACC Customer', dshort(r.tgl_acc_customer))}${kv('Target Internal', dshort(r.target_internal_date))}${kv('Selesai Internal', dshort(r.tgl_selesai_internal))}</div>
+  <div class="text-sm mb-4"><div class="text-xs text-slate-500">Poin Revisi / Keterangan</div><p class="whitespace-pre-wrap">${esc(r.poin_revisi) || '-'}</p></div>
+  <h3 class="font-semibold mb-2">Dokumen Lampiran</h3><div class="grid sm:grid-cols-2 gap-2 mb-4">${f('File Awal', r.file_awal_url)}${f('SPP Eksternal', r.file_eksternal_url)}${f('Bukti ACC Customer', r.file_acc_cust_url)}${f('SPP Internal', r.file_internal_url)}</div>
+  <h3 class="font-semibold mb-2">Update Progress</h3>
+  ${opts.length ? `<div class="space-y-2 mb-3"><select id="ut" class="inp">${opts.map(a => `<option value="${a[1]}">${a[2]}</option>`).join('')}</select>
+  <input id="ul" class="inp ${opts[0][1] === '6_DISTRIBUTED' ? '' : 'hidden'}" placeholder="Target Line Produksi" value="${esc(r.target_line)}">
+  <input id="uf" type="file" accept=".pdf,.jpg,.jpeg,.png" class="inp"><p class="text-xs text-slate-500">PDF/JPG/PNG, maksimal 5 MB. File disimpan sebagai lampiran tahap ini.</p>
+  <textarea id="un" class="inp" rows="2" placeholder="Catatan"></textarea><button class="btn" id="ub">Simpan progress</button></div>`
+    : `<p class="text-sm text-slate-500 mb-3">${r.status_progress === '6_DISTRIBUTED' ? 'Request sudah selesai.' : 'Tidak ada aksi untuk role Anda pada status ini.'}</p>`}
+  ${isA() ? `<div class="flex gap-2 mb-4"><button class="btn g" onclick="reqForm('${id}')">Edit Data</button><button class="btn r" onclick="delReq('${id}')">Hapus Request</button></div>` : ''}
+  <h3 class="font-semibold mb-2">Timeline Aktivitas</h3><ol class="space-y-2 text-sm border-l-2 border-[#00853e] pl-3">${logs.map(l => `<li><div class="font-medium">${esc(l.action_title)}</div><div class="text-xs text-slate-500">${dshort(l.timestamp)} ${String(l.timestamp).slice(11, 16)} · ${esc(l.user_name)} (${esc(l.role)})</div>${l.catatan ? `<div>${esc(l.catatan)}</div>` : ''}</li>`).join('') || '<li class="text-slate-500">Belum ada riwayat.</li>'}</ol>`);
+  if (opts.length) {
+    $('#ut').onchange = e => $('#ul').classList.toggle('hidden', e.target.value !== '6_DISTRIBUTED');
+    $('#ub').onclick = e => run(async () => {
+      const file = await readFile($('#uf'));
+      await api('updateProgress', {request_id: id, to: $('#ut').value, target_line: $('#ul').value.trim(), notes: $('#un').value, file});
+      toast('Progress diperbarui'); closeM(); await loadData();
+    }, e.target);
+  }
+}
+function delReq(id) { if (confirm('Hapus ' + id + '? Tindakan ini tidak bisa dibatalkan.')) run(async () => { await api('adminAction', {op: 'deleteRequest', request_id: id}); closeM(); await loadData(); toast('Request dihapus'); }); }
+
+/* ---------- Buat / Edit Request ---------- */
+function reqForm(id) {
+  const r = id ? D.requests.find(x => x.request_id === id) : {};
+  openM(`<h2 class="text-lg font-semibold mb-3">${id ? 'Edit ' + id : 'Buat Request SPP'}</h2><div class="space-y-2">
+  <input id="rc" class="inp" placeholder="Nama Customer" value="${esc(r.customer)}">
+  <select id="rt" class="inp"><option>New</option><option ${r.type === 'Revisi' ? 'selected' : ''}>Revisi</option></select>
+  ${isA() ? `<input id="rp" class="inp" placeholder="PIC Sales" value="${esc(r.pic_request || U.nama)}">` : ''}
+  <textarea id="rv" class="inp" rows="4" placeholder="Keterangan request / poin-poin revisi">${esc(r.poin_revisi)}</textarea>
+  ${id ? '' : '<input id="rf" type="file" accept=".pdf,.jpg,.jpeg,.png" class="inp"><p class="text-xs text-slate-500">Lampiran awal (opsional), maksimal 5 MB.</p>'}
+  <div class="flex gap-2 justify-end"><button class="btn g" onclick="closeM()">Batal</button><button class="btn" id="rs">${id ? 'Simpan perubahan' : 'Kirim request'}</button></div></div>`);
+  $('#rs').onclick = e => run(async () => {
+    const d = {customer: $('#rc').value.trim(), type: $('#rt').value, poin_revisi: $('#rv').value, pic: $('#rp') && $('#rp').value, pic_request: $('#rp') && $('#rp').value};
+    if (!d.customer) throw new Error('Nama customer wajib diisi');
+    if (id) await api('adminAction', {op: 'editRequest', request_id: id, data: d, notes: 'Data request diedit'});
+    else await api('createRequest', {...d, file: await readFile($('#rf'))});
+    closeM(); await loadData(); toast(id ? 'Perubahan disimpan' : 'Request dibuat');
+  }, e.target);
+}
+
+/* ---------- Admin: Users & Settings ---------- */
+async function adminPanel() {
+  const {users} = await api('adminAction', {op: 'listUsers'}), s = D.settings;
+  openM(`<div class="flex justify-between mb-3"><h2 class="text-lg font-semibold">Pengaturan / Users</h2><button class="btn g" onclick="closeM()">Tutup</button></div>
+  <h3 class="font-semibold mb-2">Parameter SLA</h3><div class="grid sm:grid-cols-3 gap-2 mb-2">
+  <label class="text-sm">SLA Eksternal (hari kerja)<input id="s1" type="number" min="0" class="inp" value="${s.sla_eksternal_days}"></label>
+  <label class="text-sm">SLA Internal (hari kerja)<input id="s2" type="number" min="0" class="inp" value="${s.sla_internal_days}"></label>
+  <label class="text-sm">Pengingat Customer (hari)<input id="s3" type="number" min="0" class="inp" value="${s.customer_reminder_days}"></label></div>
+  <label class="text-sm">ID Folder Google Drive<input id="s4" class="inp" value="${esc(s.drive_folder_id)}"></label>
+  <label class="text-sm block mt-2">Hari libur (satu tanggal YYYY-MM-DD per baris)<textarea id="s5" rows="4" class="inp">${esc(s.hari_libur.join('\n'))}</textarea></label>
+  <button class="btn mt-2 mb-5" id="ss">Simpan pengaturan</button>
+  <h3 class="font-semibold mb-2">Akun Pengguna</h3><div class="overflow-x-auto mb-3"><table class="w-full text-sm"><tbody>${users.map(u => `<tr class="border-b"><td class="py-1">${esc(u.nama)}<div class="text-xs text-slate-500">${esc(u.username)}</div></td><td>${esc(u.role)}</td><td>${esc(u.status)}</td>
+  <td class="text-right"><button class="btn g" onclick='userForm(${JSON.stringify(u).replace(/'/g, '&#39;')})'>Edit</button> <button class="btn r" onclick="delUser('${u.user_id}')">Hapus</button></td></tr>`).join('')}</tbody></table></div>
+  <div id="uform"></div><button class="btn g" onclick="userForm({})">+ Tambah user</button>`);
+  $('#ss').onclick = e => run(async () => {
+    await api('adminAction', {op: 'saveSettings', data: {sla_eksternal_days: +$('#s1').value, sla_internal_days: +$('#s2').value, customer_reminder_days: +$('#s3').value, drive_folder_id: $('#s4').value.trim(), hari_libur: $('#s5').value.split('\n').map(x => x.trim()).filter(Boolean)}});
+    await loadData(); toast('Pengaturan disimpan');
+  }, e.target);
+}
+function userForm(u) {
+  $('#uform').innerHTML = `<div class="border rounded p-3 mb-3 grid sm:grid-cols-2 gap-2"><input id="un1" class="inp" placeholder="Nama" value="${esc(u.nama)}"><input id="un2" class="inp" placeholder="Username" value="${esc(u.username)}">
+  <input id="un3" class="inp" placeholder="${u.user_id ? 'Password baru (kosongkan jika tidak diubah)' : 'Password'}"><select id="un4" class="inp">${['Sales', 'QC', 'Admin'].map(x => `<option ${u.role === x ? 'selected' : ''}>${x}</option>`).join('')}</select>
+  <select id="un5" class="inp"><option>Active</option><option ${u.status === 'Inactive' ? 'selected' : ''}>Inactive</option></select><button class="btn" id="usv">Simpan user</button></div>`;
+  $('#usv').onclick = e => run(async () => {
+    await api('adminAction', {op: 'saveUser', data: {user_id: u.user_id || '', nama: $('#un1').value.trim(), username: $('#un2').value, password: $('#un3').value, role: $('#un4').value, status: $('#un5').value}});
+    toast('User disimpan'); adminPanel();
+  }, e.target);
+}
+function delUser(id) { if (confirm('Hapus user ini?')) run(async () => { await api('adminAction', {op: 'deleteUser', user_id: id}); toast('User dihapus'); adminPanel(); }); }
+
+render();
+</script>
+</body>
+</html>
