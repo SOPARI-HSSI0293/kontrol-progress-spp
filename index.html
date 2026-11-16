@@ -135,8 +135,9 @@ function detail(id) {
   const r = D.requests.find(x => x.request_id === id), s = sla(r), opts = (ACT[r.status_progress] || []).filter(a => isA() || a[0] === U.role);
   const logs = D.logs.filter(l => l.request_id === id).sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   const SL = {awal: 'Sales', eksternal: 'QC', acc: 'Sales', internal: 'QC'};
-  const f = (l, u, k) => `<div class="border rounded p-2 text-sm flex flex-wrap items-center justify-between gap-2"><span>${l}</span><span class="flex gap-1">${u ? `<a class="btn g" target="_blank" rel="noopener" href="${esc(u)}">Lihat / Download</a>` : '<span class="text-slate-400 self-center">Belum ada</span>'}
-    ${(isA() || U.role === SL[k]) ? `<label class="btn g cursor-pointer">${u ? 'Ganti' : 'Upload'}<input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png" onchange="upSlot('${id}','${k}',this)"></label>` : ''}</span></div>`;
+  const FB = {'Create Request': r.file_awal_url, 'Kirim ke Customer': r.file_eksternal_url, 'Upload ACC Customer': r.file_acc_cust_url, 'Distributed ke Line': r.file_internal_url}, seen = {};
+  const fileOf = l => { const t = l.action_title, first = !seen[t]; seen[t] = 1; return l.file_url || (first ? FB[t] || '' : ''); };
+  const slotOf = t => /Create|File Awal/.test(t) ? 'awal' : /ACC/.test(t) ? 'acc' : /Internal|Distributed/.test(t) ? 'internal' : /Eksternal|Kirim|Ditolak/.test(t) ? 'eksternal' : '';
   const kv = (k, v) => `<div><div class="text-xs text-slate-500">${k}</div><div>${esc(v || '-')}</div></div>`;
   openM(`<div class="flex justify-between items-start mb-3"><div><h2 class="text-lg font-semibold">${esc(r.request_id)}</h2><span class="bd ${CC[s.c]}">${esc(s.t)}</span></div><button class="btn g" onclick="closeM()">Tutup</button></div>
   <h3 class="font-semibold mb-2">Informasi Request</h3><div class="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm mb-2">
@@ -144,7 +145,7 @@ function detail(id) {
   ${kv('Target Eksternal', dshort(r.target_eksternal_date))}${kv('Selesai Eksternal', dshort(r.tgl_selesai_eksternal))}${kv('Dikirim ke Customer', dshort(r.tgl_kirim_customer))}
   ${kv('ACC Customer', dshort(r.tgl_acc_customer))}${kv('Target Internal', dshort(r.target_internal_date))}${kv('Selesai Internal', dshort(r.tgl_selesai_internal))}</div>
   <div class="text-sm mb-4"><div class="text-xs text-slate-500">Poin Revisi / Keterangan</div><p class="whitespace-pre-wrap">${esc(r.poin_revisi) || '-'}</p></div>
-  <div class="grid lg:grid-cols-2 gap-6"><div><h3 class="font-semibold mb-2">Dokumen Lampiran (terbaru)</h3><div class="grid gap-2 mb-4">${f('File Awal', r.file_awal_url, 'awal')}${f('SPP Eksternal', r.file_eksternal_url, 'eksternal')}${f('Bukti ACC Customer', r.file_acc_cust_url, 'acc')}${f('SPP Internal', r.file_internal_url, 'internal')}</div>
+  <div class="grid lg:grid-cols-2 gap-6"><div>
   <h3 class="font-semibold mb-2">Update Progress</h3>
   ${opts.length ? `<div class="space-y-2 mb-3"><select id="ut" class="inp">${opts.map(a => `<option value="${a[1]}">${a[2]}</option>`).join('')}</select>
   <input id="ul" class="inp ${opts[0][1] === '6_DISTRIBUTED' ? '' : 'hidden'}" placeholder="Target Line Produksi" value="${esc(r.target_line)}">
@@ -152,7 +153,7 @@ function detail(id) {
   <textarea id="un" class="inp" rows="2" placeholder="Catatan"></textarea><button class="btn" id="ub">Simpan progress</button></div>`
     : `<p class="text-sm text-slate-500 mb-3">${r.status_progress === '6_DISTRIBUTED' ? 'Request sudah selesai.' : 'Tidak ada aksi untuk role Anda pada status ini.'}</p>`}
   ${isA() ? `<div class="flex gap-2 mb-4"><button class="btn g" onclick="reqForm('${id}')">Edit Data</button><button class="btn r" onclick="delReq('${id}')">Hapus Request</button></div>` : ''}
-  </div><div><h3 class="font-semibold mb-2">Timeline Aktivitas</h3><ol class="space-y-2 text-sm">${logs.map(l => { const c = tlc(l.action_title); return `<li class="rounded-md p-2.5 border-l-4" style="background:${c[0]};border-color:${c[1]}"><div class="font-medium">${esc(l.action_title)}</div><div class="text-xs text-slate-600">${dshort(l.timestamp)} ${String(l.timestamp).slice(11, 16)} · ${esc(l.user_name)} (${esc(l.role)})</div>${l.catatan ? `<div class="mt-0.5">${esc(l.catatan)}</div>` : ''}${l.file_url ? `<a class="btn g !py-1 mt-1.5 inline-block" target="_blank" rel="noopener" href="${esc(l.file_url)}">Lihat dokumen</a>` : ''}</li>`; }).join('') || '<li class="text-slate-500">Belum ada riwayat.</li>'}</ol></div></div>`);
+  </div><div><h3 class="font-semibold mb-2">Timeline Aktivitas</h3><ol class="space-y-2 text-sm">${logs.map(l => { const c = tlc(l.action_title); return `<li class="rounded-md p-2.5 border-l-4" style="background:${c[0]};border-color:${c[1]}"><div class="font-medium">${esc(l.action_title)}</div><div class="text-xs text-slate-600">${dshort(l.timestamp)} ${String(l.timestamp).slice(11, 16)} · ${esc(l.user_name)} (${esc(l.role)})</div>${l.catatan ? `<div class="mt-0.5">${esc(l.catatan)}</div>` : ''}${(() => { const k = slotOf(l.action_title), fu = fileOf(l), can = k && (isA() || U.role === SL[k]); return (fu || can) ? `<div class="flex flex-wrap gap-2 mt-1.5">${fu ? `<a class="btn g !py-1" target="_blank" rel="noopener" href="${esc(fu)}">Lihat / Download</a>` : ''}${can ? `<label class="btn g !py-1 cursor-pointer">${fu ? 'Ganti' : 'Upload'}<input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png" onchange="upSlot('${id}','${k}',this,'${l.log_id}')"></label>` : ''}</div>` : ''; })()}</li>`; }).join('') || '<li class="text-slate-500">Belum ada riwayat.</li>'}</ol></div></div>`);
   if (opts.length) {
     $('#ut').onchange = e => $('#ul').classList.toggle('hidden', e.target.value !== '6_DISTRIBUTED');
     $('#ub').onclick = e => run(async () => {
@@ -162,8 +163,8 @@ function detail(id) {
     }, e.target);
   }
 }
-function upSlot(id, slot, inp) {
-  run(async () => { const file = await readFile(inp); if (!file) return; toast('Mengunggah…'); await api('uploadFile', {request_id: id, slot, file}); await loadData(); detail(id); toast('Dokumen tersimpan'); });
+function upSlot(id, slot, inp, log_id) {
+  run(async () => { const file = await readFile(inp); if (!file) return; toast('Mengunggah…'); await api('uploadFile', {request_id: id, slot, file, log_id}); await loadData(); detail(id); toast('Dokumen tersimpan'); });
 }
 function delReq(id) { if (confirm('Hapus ' + id + '? Tindakan ini tidak bisa dibatalkan.')) run(async () => { await api('adminAction', {op: 'deleteRequest', request_id: id}); closeM(); await loadData(); toast('Request dihapus'); }); }
 
