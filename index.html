@@ -18,7 +18,7 @@ body{font-family:'IBM Plex Sans',system-ui,sans-serif;background:#f3f8f4;color:#
 </head>
 <body>
 <div id="app"></div>
-<div id="modal" class="hidden fixed inset-0 z-50 bg-black/40 overflow-y-auto p-3 sm:p-8" onclick="if(event.target===this)closeM()"><div id="mbox" class="bg-white rounded-lg max-w-3xl mx-auto p-5 shadow-xl"></div></div>
+<div id="modal" class="hidden fixed inset-0 z-50 bg-black/40 overflow-y-auto p-3 sm:p-8" onclick="if(event.target===this)closeM()"><div id="mbox" class="bg-white rounded-lg max-w-5xl mx-auto p-5 shadow-xl"></div></div>
 <div id="toast" class="hidden fixed bottom-4 right-4 z-[60] px-4 py-2 rounded bg-slate-800 text-white text-sm"></div>
 
 <script>
@@ -120,6 +120,17 @@ function rows() {
 const ACT = {'1_REQUESTED': [['QC', '2_QC_EKSTERNAL', 'Mulai proses SPP Eksternal']], '2_QC_EKSTERNAL': [['QC', '3_WAITING_CUST', 'SPP Eksternal selesai & di-ACC Atasan QC, serahkan ke Sales']],
   '3_WAITING_CUST': [['Sales', '4_CUST_APPROVED', 'Customer menyetujui, teruskan ke QC'], ['Sales', '2_QC_EKSTERNAL', 'Customer menolak / minta revisi, kembalikan ke QC Eksternal']],
   '4_CUST_APPROVED': [['QC', '5_QC_INTERNAL', 'Mulai susun SPP Internal']], '5_QC_INTERNAL': [['QC', '6_DISTRIBUTED', 'SPP Internal selesai & didistribusikan ke Line']]};
+function tlc(t) {
+  if (/Ditolak/.test(t)) return ['#fbeae8', '#e9b4ae'];
+  if (/^Upload ACC/.test(t)) return ['#e5f4ea', '#a9d8b8'];
+  if (/^Upload/.test(t)) return ['#f0ebf8', '#cbbbe6'];
+  if (/Create/.test(t)) return ['#eef2f6', '#b8c4d0'];
+  if (/Eksternal/.test(t)) return ['#e8f0fb', '#b3cdee'];
+  if (/Customer/.test(t)) return ['#fdf4df', '#ecd08a'];
+  if (/Internal/.test(t)) return ['#e1f3f1', '#a5d6d0'];
+  if (/Distributed/.test(t)) return ['#d8eedf', '#8ccaa0'];
+  return ['#f1f3f2', '#cfd6d3'];
+}
 function detail(id) {
   const r = D.requests.find(x => x.request_id === id), s = sla(r), opts = (ACT[r.status_progress] || []).filter(a => isA() || a[0] === U.role);
   const logs = D.logs.filter(l => l.request_id === id).sort((a, b) => b.timestamp.localeCompare(a.timestamp));
@@ -133,20 +144,20 @@ function detail(id) {
   ${kv('Target Eksternal', dshort(r.target_eksternal_date))}${kv('Selesai Eksternal', dshort(r.tgl_selesai_eksternal))}${kv('Dikirim ke Customer', dshort(r.tgl_kirim_customer))}
   ${kv('ACC Customer', dshort(r.tgl_acc_customer))}${kv('Target Internal', dshort(r.target_internal_date))}${kv('Selesai Internal', dshort(r.tgl_selesai_internal))}</div>
   <div class="text-sm mb-4"><div class="text-xs text-slate-500">Poin Revisi / Keterangan</div><p class="whitespace-pre-wrap">${esc(r.poin_revisi) || '-'}</p></div>
-  <h3 class="font-semibold mb-2">Dokumen Lampiran</h3><div class="grid sm:grid-cols-2 gap-2 mb-4">${f('File Awal', r.file_awal_url, 'awal')}${f('SPP Eksternal', r.file_eksternal_url, 'eksternal')}${f('Bukti ACC Customer', r.file_acc_cust_url, 'acc')}${f('SPP Internal', r.file_internal_url, 'internal')}</div>
+  <div class="grid lg:grid-cols-2 gap-6"><div><h3 class="font-semibold mb-2">Dokumen Lampiran (terbaru)</h3><div class="grid gap-2 mb-4">${f('File Awal', r.file_awal_url, 'awal')}${f('SPP Eksternal', r.file_eksternal_url, 'eksternal')}${f('Bukti ACC Customer', r.file_acc_cust_url, 'acc')}${f('SPP Internal', r.file_internal_url, 'internal')}</div>
   <h3 class="font-semibold mb-2">Update Progress</h3>
   ${opts.length ? `<div class="space-y-2 mb-3"><select id="ut" class="inp">${opts.map(a => `<option value="${a[1]}">${a[2]}</option>`).join('')}</select>
   <input id="ul" class="inp ${opts[0][1] === '6_DISTRIBUTED' ? '' : 'hidden'}" placeholder="Target Line Produksi" value="${esc(r.target_line)}">
-  <input id="uf" type="file" accept=".pdf,.jpg,.jpeg,.png" class="inp"><p class="text-xs text-slate-500">PDF/JPG/PNG, maksimal 5 MB. File disimpan sebagai lampiran tahap ini.</p>
+  <input id="uf" type="file" accept=".pdf,.jpg,.jpeg,.png" class="inp"><select id="us" class="inp"><option value="">Simpan sebagai: otomatis sesuai tahap</option><option value="awal">File Awal</option><option value="eksternal">SPP Eksternal</option><option value="acc">Bukti ACC Customer</option><option value="internal">SPP Internal</option></select><p class="text-xs text-slate-500">PDF/JPG/PNG, maksimal 5 MB. File disimpan sebagai lampiran tahap ini.</p>
   <textarea id="un" class="inp" rows="2" placeholder="Catatan"></textarea><button class="btn" id="ub">Simpan progress</button></div>`
     : `<p class="text-sm text-slate-500 mb-3">${r.status_progress === '6_DISTRIBUTED' ? 'Request sudah selesai.' : 'Tidak ada aksi untuk role Anda pada status ini.'}</p>`}
   ${isA() ? `<div class="flex gap-2 mb-4"><button class="btn g" onclick="reqForm('${id}')">Edit Data</button><button class="btn r" onclick="delReq('${id}')">Hapus Request</button></div>` : ''}
-  <h3 class="font-semibold mb-2">Timeline Aktivitas</h3><ol class="space-y-2 text-sm border-l-2 border-[#00853e] pl-3">${logs.map(l => `<li><div class="font-medium">${esc(l.action_title)}</div><div class="text-xs text-slate-500">${dshort(l.timestamp)} ${String(l.timestamp).slice(11, 16)} · ${esc(l.user_name)} (${esc(l.role)})</div>${l.catatan ? `<div>${esc(l.catatan)}</div>` : ''}</li>`).join('') || '<li class="text-slate-500">Belum ada riwayat.</li>'}</ol>`);
+  </div><div><h3 class="font-semibold mb-2">Timeline Aktivitas</h3><ol class="space-y-2 text-sm">${logs.map(l => { const c = tlc(l.action_title); return `<li class="rounded-md p-2.5 border-l-4" style="background:${c[0]};border-color:${c[1]}"><div class="font-medium">${esc(l.action_title)}</div><div class="text-xs text-slate-600">${dshort(l.timestamp)} ${String(l.timestamp).slice(11, 16)} · ${esc(l.user_name)} (${esc(l.role)})</div>${l.catatan ? `<div class="mt-0.5">${esc(l.catatan)}</div>` : ''}${l.file_url ? `<a class="btn g !py-1 mt-1.5 inline-block" target="_blank" rel="noopener" href="${esc(l.file_url)}">Lihat dokumen</a>` : ''}</li>`; }).join('') || '<li class="text-slate-500">Belum ada riwayat.</li>'}</ol></div></div>`);
   if (opts.length) {
     $('#ut').onchange = e => $('#ul').classList.toggle('hidden', e.target.value !== '6_DISTRIBUTED');
     $('#ub').onclick = e => run(async () => {
       const file = await readFile($('#uf'));
-      await api('updateProgress', {request_id: id, to: $('#ut').value, target_line: $('#ul').value.trim(), notes: $('#un').value, file});
+      await api('updateProgress', {request_id: id, to: $('#ut').value, target_line: $('#ul').value.trim(), notes: $('#un').value, file, slot: $('#us').value});
       toast('Progress diperbarui'); closeM(); await loadData();
     }, e.target);
   }
