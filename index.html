@@ -10,6 +10,9 @@
 body{font-family:'IBM Plex Sans',system-ui,sans-serif;background:#f3f8f4;color:#1f2a2e}
 .btn{padding:.5rem .9rem;border-radius:.375rem;font-weight:500;font-size:.875rem;background:#00853e;color:#fff}
 .btn:hover{background:#006b32}header .btn{padding:.25rem .7rem;font-size:.8125rem}
+.fb select,.fb label,.fb .flex,.fb input[type=date]{flex-shrink:0}
+.fb label{white-space:nowrap}
+@media(min-width:1024px){.fb select,.fb input[type=date]{font-size:.8125rem;padding:.4rem .4rem}.fb input[type=date]{width:8.6rem!important}}
 .btn.g{background:#fff;color:#1f2a2e;border:1px solid #cfd6d3}.btn.g:hover{background:#eef1ef}.btn.r{background:#b91c1c}
 .inp{width:100%;border:1px solid #cfd6d3;border-radius:.375rem;padding:.45rem .6rem;font-size:.875rem;background:#fff}
 .inp:focus,.btn:focus-visible{outline:2px solid #00853e;outline-offset:1px}
@@ -103,7 +106,7 @@ function dash() {
   <button class="btn g" onclick="logout()">Logout</button></div></header>
   <main class="max-w-6xl mx-auto p-4 space-y-4">
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3">${cards.map(x => `<div class="rounded-lg p-4 border-l-4" style="background:${x[2][0]};border-color:${x[2][1]}"><div class="text-3xl font-semibold" style="color:${x[2][2]}">${x[1]}</div><div class="text-sm font-medium" style="color:${x[2][2]}">${x[0]}</div></div>`).join('')}</div>
-  <div class="flex flex-wrap gap-2"><input id="fq" class="inp !w-auto flex-1 min-w-[12rem]" placeholder="Cari No. Request, Customer, atau PIC" value="${esc(F.q)}">
+  <div class="fb flex flex-wrap lg:flex-nowrap items-center gap-2"><input id="fq" class="inp flex-1 min-w-[8rem]" placeholder="Cari No. Request, Customer, atau PIC" value="${esc(F.q)}">
   <select id="fs" class="inp !w-auto"><option value="">Semua Status</option>${STEPS.map(s => `<option value="${s}" ${F.s === s ? 'selected' : ''}>${LBL[s]}</option>`).join('')}</select>
   <select id="ft" class="inp !w-auto">${['', 'New', 'Revisi'].map(t => `<option value="${t}" ${F.t === t ? 'selected' : ''}>${t || 'Semua Type'}</option>`).join('')}</select>
   <select id="fo" class="inp !w-auto font-medium">${[['', 'OPEN & CLOSE'], ['OPEN', 'OPEN'], ['CLOSE', 'CLOSE']].map(o => `<option value="${o[0]}" ${F.o === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>
