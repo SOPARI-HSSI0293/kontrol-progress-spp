@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SPP Progress Control</title>
+<title>Progress Control SPP</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -28,7 +28,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxdp3AYQNsViAuRinFKd2w6
 const STEPS = ['1_REQUESTED','2_QC_EKSTERNAL','3_WAITING_CUST','4_CUST_APPROVED','5_QC_INTERNAL','6_DISTRIBUTED'];
 const LBL = {'1_REQUESTED':'1. Requested','2_QC_EKSTERNAL':'2. QC Eksternal','3_WAITING_CUST':'3. Waiting Customer','4_CUST_APPROVED':'4. Customer Approved','5_QC_INTERNAL':'5. QC Internal','6_DISTRIBUTED':'6. Distributed'};
 const MON = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
-let U = JSON.parse(sessionStorage.getItem('spp_u') || 'null'), D = null, F = {q:'',s:'',t:''};
+let U = JSON.parse(sessionStorage.getItem('spp_u') || 'null'), D = null, F = {q:'',s:'',t:'',o:'',d1:'',d2:''};
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -79,10 +79,10 @@ function render() { U ? (D ? dash() : (loadData(), $('#app').innerHTML = '<p cla
 
 function loginView() {
   $('#app').innerHTML = `<div class="min-h-screen grid place-items-center p-4"><form id="lf" class="bg-white rounded-lg shadow p-6 w-full max-w-sm space-y-3">
-  <div class="text-center border-t-4 border-[#00853e] -mt-6 -mx-6 px-6 pt-6"><img src="logo.png" alt="Hanwa" class="h-14 mx-auto mb-2" onerror="this.style.display='none'"><div class="font-semibold text-[#00853e] leading-tight">PT HANWA STEEL SERVICE INDONESIA</div><h1 class="text-xl font-semibold mt-3">SPP Progress Control</h1><p class="text-sm text-slate-500">Masuk dengan akun yang diberikan Admin.</p></div>
+  <div class="text-center border-t-4 border-[#00853e] -mt-6 -mx-6 px-6 pt-6"><img src="logo.png" alt="Hanwa" class="h-14 mx-auto mb-2" onerror="this.style.display='none'"><div class="font-semibold text-[#00853e] leading-tight">PT HANWA STEEL SERVICE INDONESIA</div><h1 class="text-xl font-semibold mt-3">Progress Control SPP</h1><p class="text-sm text-slate-500">Masuk dengan akun yang diberikan Admin.</p></div>
   <input id="lu" class="inp" placeholder="Username" autocomplete="username" required>
   <input id="lp" type="password" class="inp" placeholder="Password" autocomplete="current-password" required>
-  <button class="btn w-full">Masuk</button></form></div>`;
+  <button class="btn w-full">Masuk</button></form></div><footer class="fixed bottom-0 inset-x-0 text-center text-xs text-slate-500 py-3">Progress Control SPP V1.0 © Sopari 2026</footer>`;
   $('#lf').onsubmit = e => { e.preventDefault(); run(async () => {
     const a = {username: $('#lu').value, password: $('#lp').value}, j = await api('login', {}, a);
     U = {...j.user, username: a.username.trim().toLowerCase(), password: a.password}; sessionStorage.setItem('spp_u', JSON.stringify(U)); render();
@@ -95,7 +95,7 @@ function dash() {
   const R = D.requests, c = f => R.filter(f).length;
   const cards = [['Total Request', R.length], ['Proses QC', c(r => [1, 4].includes(idx(r)) || idx(r) === 0)], ['Menunggu Customer', c(r => idx(r) === 2)], ['Selesai (Distributed)', c(r => idx(r) === 5)]];
   $('#app').innerHTML = `<header class="bg-[#0b3d24] text-white"><div class="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center gap-3">
-  <img src="logo.png" alt="Hanwa" class="h-9 w-auto bg-white rounded px-2 py-1" onerror="this.style.display='none'"><h1 class="font-semibold text-lg mr-auto">SPP Progress Control <span class="hidden sm:inline font-normal text-sm opacity-80">· PT Hanwa Steel Service Indonesia</span></h1>
+  <img src="logo.png" alt="Hanwa" class="h-9 w-auto bg-white rounded px-2 py-1" onerror="this.style.display='none'"><h1 class="font-semibold text-lg mr-auto">Progress Control SPP <span class="hidden sm:inline font-normal text-sm opacity-80">· PT Hanwa Steel Service Indonesia</span></h1>
   <span class="text-sm">${esc(U.nama)} <span class="bd bg-[#dcf2e4] text-[#0b3d24] ml-1">${esc(U.role)}</span></span>
   ${['Sales', 'Admin'].includes(U.role) ? '<button class="btn !bg-white !text-[#0b3d24]" onclick="reqForm()">+ Buat Request SPP</button>' : ''}
   ${isA() ? '<button class="btn g" onclick="adminPanel()">Pengaturan / Users</button>' : ''}
@@ -105,20 +105,25 @@ function dash() {
   <div class="flex flex-wrap gap-2"><input id="fq" class="inp !w-auto flex-1 min-w-[12rem]" placeholder="Cari No. Request, Customer, atau PIC" value="${esc(F.q)}">
   <select id="fs" class="inp !w-auto"><option value="">Semua Status</option>${STEPS.map(s => `<option value="${s}" ${F.s === s ? 'selected' : ''}>${LBL[s]}</option>`).join('')}</select>
   <select id="ft" class="inp !w-auto">${['', 'New', 'Revisi'].map(t => `<option value="${t}" ${F.t === t ? 'selected' : ''}>${t || 'Semua Type'}</option>`).join('')}</select>
+  <select id="fo" class="inp !w-auto font-medium">${[['', 'OPEN & CLOSE'], ['OPEN', 'OPEN'], ['CLOSE', 'CLOSE']].map(o => `<option value="${o[0]}" ${F.o === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>
+  <label class="text-xs text-slate-500 flex items-center gap-1">Dari<input id="fd1" type="date" class="inp !w-auto" value="${F.d1}"></label>
+  <label class="text-xs text-slate-500 flex items-center gap-1">Sampai<input id="fd2" type="date" class="inp !w-auto" value="${F.d2}"></label>
+  <button class="btn g" onclick="F={q:'',s:'',t:'',o:'',d1:'',d2:''};dash()">Reset</button>
   <button class="btn g" onclick="loadData()">Muat ulang</button></div>
-  <div class="bg-white rounded-lg border border-slate-200 overflow-x-auto"><table class="w-full text-sm"><thead class="text-left text-slate-500 border-b"><tr>${['No. Request', 'Customer', 'Type', 'PIC Sales', 'Status Progress', 'Kontrol Target / SLA', ''].map(h => `<th class="p-3 font-medium">${h}</th>`).join('')}</tr></thead><tbody id="tb"></tbody></table></div></main>`;
-  const upd = () => { F = {q: $('#fq').value, s: $('#fs').value, t: $('#ft').value}; rows(); };
-  $('#fq').oninput = upd; $('#fs').onchange = upd; $('#ft').onchange = upd; rows();
+  <div class="bg-white rounded-lg border border-slate-200 overflow-x-auto"><table class="w-full text-sm"><thead class="text-left text-slate-500 border-b"><tr>${['No. Request', 'Customer', 'Type', 'PIC Sales', 'OPEN / CLOSE', 'Status Progress', 'Kontrol Target / SLA', ''].map(h => `<th class="p-3 font-medium">${h}</th>`).join('')}</tr></thead><tbody id="tb"></tbody></table></div></main><footer class="text-center text-xs text-slate-500 py-6">Progress Control SPP V1.0 © Sopari 2026</footer>`;
+  const upd = () => { F = {q: $('#fq').value, s: $('#fs').value, t: $('#ft').value, o: $('#fo').value, d1: $('#fd1').value, d2: $('#fd2').value}; rows(); };
+  $('#fq').oninput = upd; $('#fs').onchange = upd; $('#ft').onchange = upd; $('#fo').onchange = upd; $('#fd1').onchange = upd; $('#fd2').onchange = upd; rows();
 }
 function rows() {
-  const q = F.q.toLowerCase(), L = D.requests.filter(r => (!F.s || r.status_progress === F.s) && (!F.t || r.type === F.t) && (!q || [r.request_id, r.customer, r.pic_request].join(' ').toLowerCase().includes(q))).sort((a, b) => b.request_id.localeCompare(a.request_id));
+  const q = F.q.toLowerCase(), L = D.requests.filter(r => (!F.s || r.status_progress === F.s) && (!F.t || r.type === F.t) && (!F.o || (F.o === 'CLOSE') === (idx(r) === 5)) && (!F.d1 || r.tanggal_request.slice(0, 10) >= F.d1) && (!F.d2 || r.tanggal_request.slice(0, 10) <= F.d2) && (!q || [r.request_id, r.customer, r.pic_request].join(' ').toLowerCase().includes(q))).sort((a, b) => b.request_id.localeCompare(a.request_id));
   $('#tb').innerHTML = L.length ? L.map(r => { const i = idx(r), s = sla(r);
     return `<tr class="border-b last:border-0 align-top"><td class="p-3"><div class="font-medium">${esc(r.request_id)}</div><div class="text-xs text-slate-500">${dshort(r.tanggal_request)}</div></td>
     <td class="p-3">${esc(r.customer)}</td><td class="p-3"><span class="bd ${r.type === 'Revisi' ? 'bg-orange-100 text-orange-800' : 'bg-blue-100 text-blue-800'}">${esc(r.type)}</span></td>
     <td class="p-3">${esc(r.pic_request)}</td>
+    <td class="p-3">${i === 5 ? '<span class="bd !px-2.5 !py-1 !text-xs font-semibold tracking-wide bg-slate-200 text-slate-700">● CLOSE</span>' : '<span class="bd !px-2.5 !py-1 !text-xs font-semibold tracking-wide bg-amber-100 text-amber-900">● OPEN</span>'}</td>
     <td class="p-3"><div class="flex gap-1 mb-1">${STEPS.map((_, k) => `<span class="dot ${k < i ? 'on' : k === i ? 'now' : ''}"></span>`).join('')}</div><div class="text-xs">${LBL[r.status_progress]}</div></td>
     <td class="p-3"><span class="bd ${CC[s.c]}">${esc(s.t)}</span></td><td class="p-3"><button class="btn g" onclick="detail('${r.request_id}')">Detail</button></td></tr>`; }).join('')
-    : '<tr><td colspan="7" class="p-8 text-center text-slate-500">Belum ada request yang cocok. Ubah filter atau buat request baru.</td></tr>';
+    : '<tr><td colspan="8" class="p-8 text-center text-slate-500">Belum ada request yang cocok. Ubah filter atau buat request baru.</td></tr>';
 }
 
 /* ---------- Detail ---------- */
