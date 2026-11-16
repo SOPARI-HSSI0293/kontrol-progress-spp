@@ -54,7 +54,7 @@ function readFile(inp) {
     const f = inp && inp.files[0]; if (!f) return res(null);
     if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) return rej(new Error('Format file harus .pdf, .jpg, .jpeg, atau .png'));
     if (f.size > 5 * 1024 * 1024) return rej(new Error('Ukuran file maksimal 5 MB'));
-    const fr = new FileReader(); fr.onload = () => res({name: f.name, mime: f.type, data: fr.result.split(',')[1]}); fr.onerror = () => rej(new Error('Gagal membaca file')); fr.readAsDataURL(f);
+    const fr = new FileReader(); fr.onload = () => res({name: f.name, mime: f.type || ({pdf:'application/pdf',png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg'})[f.name.split('.').pop().toLowerCase()], data: fr.result.split(',')[1]}); fr.onerror = () => rej(new Error('Gagal membaca file')); fr.readAsDataURL(f);
   });
 }
 
@@ -123,7 +123,9 @@ const ACT = {'1_REQUESTED': [['QC', '2_QC_EKSTERNAL', 'Mulai proses SPP Eksterna
 function detail(id) {
   const r = D.requests.find(x => x.request_id === id), s = sla(r), opts = (ACT[r.status_progress] || []).filter(a => isA() || a[0] === U.role);
   const logs = D.logs.filter(l => l.request_id === id).sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-  const f = (l, u) => `<div class="border rounded p-2 text-sm flex items-center justify-between gap-2"><span>${l}</span>${u ? `<a class="btn g" target="_blank" rel="noopener" href="${esc(u)}">Lihat / Download File</a>` : '<span class="text-slate-400">Belum ada</span>'}</div>`;
+  const SL = {awal: 'Sales', eksternal: 'QC', acc: 'Sales', internal: 'QC'};
+  const f = (l, u, k) => `<div class="border rounded p-2 text-sm flex flex-wrap items-center justify-between gap-2"><span>${l}</span><span class="flex gap-1">${u ? `<a class="btn g" target="_blank" rel="noopener" href="${esc(u)}">Lihat / Download</a>` : '<span class="text-slate-400 self-center">Belum ada</span>'}
+    ${(isA() || U.role === SL[k]) ? `<label class="btn g cursor-pointer">${u ? 'Ganti' : 'Upload'}<input type="file" class="hidden" accept=".pdf,.jpg,.jpeg,.png" onchange="upSlot('${id}','${k}',this)"></label>` : ''}</span></div>`;
   const kv = (k, v) => `<div><div class="text-xs text-slate-500">${k}</div><div>${esc(v || '-')}</div></div>`;
   openM(`<div class="flex justify-between items-start mb-3"><div><h2 class="text-lg font-semibold">${esc(r.request_id)}</h2><span class="bd ${CC[s.c]}">${esc(s.t)}</span></div><button class="btn g" onclick="closeM()">Tutup</button></div>
   <h3 class="font-semibold mb-2">Informasi Request</h3><div class="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm mb-2">
@@ -131,7 +133,7 @@ function detail(id) {
   ${kv('Target Eksternal', dshort(r.target_eksternal_date))}${kv('Selesai Eksternal', dshort(r.tgl_selesai_eksternal))}${kv('Dikirim ke Customer', dshort(r.tgl_kirim_customer))}
   ${kv('ACC Customer', dshort(r.tgl_acc_customer))}${kv('Target Internal', dshort(r.target_internal_date))}${kv('Selesai Internal', dshort(r.tgl_selesai_internal))}</div>
   <div class="text-sm mb-4"><div class="text-xs text-slate-500">Poin Revisi / Keterangan</div><p class="whitespace-pre-wrap">${esc(r.poin_revisi) || '-'}</p></div>
-  <h3 class="font-semibold mb-2">Dokumen Lampiran</h3><div class="grid sm:grid-cols-2 gap-2 mb-4">${f('File Awal', r.file_awal_url)}${f('SPP Eksternal', r.file_eksternal_url)}${f('Bukti ACC Customer', r.file_acc_cust_url)}${f('SPP Internal', r.file_internal_url)}</div>
+  <h3 class="font-semibold mb-2">Dokumen Lampiran</h3><div class="grid sm:grid-cols-2 gap-2 mb-4">${f('File Awal', r.file_awal_url, 'awal')}${f('SPP Eksternal', r.file_eksternal_url, 'eksternal')}${f('Bukti ACC Customer', r.file_acc_cust_url, 'acc')}${f('SPP Internal', r.file_internal_url, 'internal')}</div>
   <h3 class="font-semibold mb-2">Update Progress</h3>
   ${opts.length ? `<div class="space-y-2 mb-3"><select id="ut" class="inp">${opts.map(a => `<option value="${a[1]}">${a[2]}</option>`).join('')}</select>
   <input id="ul" class="inp ${opts[0][1] === '6_DISTRIBUTED' ? '' : 'hidden'}" placeholder="Target Line Produksi" value="${esc(r.target_line)}">
@@ -148,6 +150,9 @@ function detail(id) {
       toast('Progress diperbarui'); closeM(); await loadData();
     }, e.target);
   }
+}
+function upSlot(id, slot, inp) {
+  run(async () => { const file = await readFile(inp); if (!file) return; toast('Mengunggah…'); await api('uploadFile', {request_id: id, slot, file}); await loadData(); detail(id); toast('Dokumen tersimpan'); });
 }
 function delReq(id) { if (confirm('Hapus ' + id + '? Tindakan ini tidak bisa dibatalkan.')) run(async () => { await api('adminAction', {op: 'deleteRequest', request_id: id}); closeM(); await loadData(); toast('Request dihapus'); }); }
 
