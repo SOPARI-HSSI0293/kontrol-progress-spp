@@ -134,6 +134,7 @@ const ACT = {'1_REQUESTED': [['QC', '2_QC_EKSTERNAL', 'SPP Eksternal Done']], '2
   '3_WAITING_CUST': [['Sales', '4_CUST_APPROVED', 'Customer menyetujui, teruskan ke QC'], ['Sales', '2_QC_EKSTERNAL', 'Customer menolak / minta revisi, kembalikan ke SPP Eksternal']],
   '4_CUST_APPROVED': [['QC', '5_QC_INTERNAL', 'SPP Internal Done']], '5_QC_INTERNAL': [['QC', '6_DISTRIBUTED', 'SPP Internal selesai & didistribusikan ke Line']]};
 function tlc(t) {
+  if (/^Edit Data/.test(t)) return ['#f1f3f2', '#cfd6d3'];
   if (/Ditolak/.test(t)) return ['#fbeae8', '#e9b4ae'];
   if (/^Upload ACC/.test(t)) return ['#e5f4ea', '#a9d8b8'];
   if (/^Upload/.test(t)) return ['#f0ebf8', '#cbbbe6'];
@@ -164,6 +165,7 @@ function detail(id) {
   <input id="uf" type="file" multiple accept=".pdf,.jpg,.jpeg,.png" class="inp"><p class="text-xs text-slate-500">Bisa lebih dari satu file (maks 5 file, masing-masing 5 MB; PDF/JPG/PNG). Dokumen otomatis tersimpan pada tahap ini.</p>
   <textarea id="un" class="inp" rows="2" placeholder="Catatan"></textarea><button class="btn" id="ub">Simpan progress</button></div>`
     : `<p class="text-sm text-slate-500 mb-3">${r.status_progress === '6_DISTRIBUTED' ? 'Request sudah selesai.' : 'Tidak ada aksi untuk role Anda pada status ini.'}</p>`}
+  ${['1_REQUESTED', '2_QC_EKSTERNAL'].includes(r.status_progress) && ['Sales', 'Admin'].includes(U.role) ? `<div class="border rounded p-3 mb-3 text-sm space-y-2"><div class="font-medium">Ubah Target SPP Eksternal <span class="font-normal text-slate-500">(saat ini ${dshort(r.target_eksternal_date)})</span></div><div class="grid grid-cols-2 gap-2"><input id="tg1" type="number" min="1" max="60" class="inp" placeholder="Hari kerja sejak tgl request"><input id="tg2" type="date" class="inp"></div><input id="tg3" class="inp" placeholder="Alasan perubahan (wajib)"><button class="btn g" onclick="saveTarget('${id}', this)">Simpan target</button></div>` : ''}
   ${isA() ? `<div class="flex gap-2 mb-4"><button class="btn g" onclick="reqForm('${id}')">Edit Data</button><button class="btn r" onclick="delReq('${id}')">Hapus Request</button></div>` : ''}
   </div><div><h3 class="font-semibold">Timeline Aktivitas</h3><p class="text-xs text-slate-500 mb-2">Dokumen hanya bisa ditambah pada tahap terakhir. Setelah tahap berikutnya diproses, dokumen terkunci.</p><ol class="space-y-2 text-sm">${logs.map(l => { const c = tlc(l.action_title); return `<li class="rounded-md p-2.5 border-l-4" style="background:${c[0]};border-color:${c[1]}"><div class="font-medium">${esc(l.action_title)}</div><div class="text-xs text-slate-600">${dshort(l.timestamp)} ${String(l.timestamp).slice(11, 16)} · ${esc(l.user_name)} (${esc(l.role)})</div>${l.catatan ? `<div class="mt-0.5">${esc(l.catatan)}</div>` : ''}${(() => { const ds = docsOf(l), can = l.log_id === lastId && (isA() || U.role === l.role || U.role === (r.status_progress === '3_WAITING_CUST' ? 'Sales' : 'QC')); return (ds.length || can) ? `<div class="flex flex-wrap gap-2 mt-1.5">${ds.map(d => `<a class="btn g !py-1" target="_blank" rel="noopener" title="${esc(d.n)}" href="${esc(d.u)}">${esc(d.n.length > 24 ? d.n.slice(0, 22) + '…' : d.n)}</a>`).join('')}${can ? `<label class="btn g !py-1 cursor-pointer">+ Tambah dokumen<input type="file" multiple class="hidden" accept=".pdf,.jpg,.jpeg,.png" onchange="addDocs('${id}','${l.log_id}',this)"></label>` : ''}</div>` : ''; })()}</li>`; }).join('') || '<li class="text-slate-500">Belum ada riwayat.</li>'}</ol></div></div>`);
   if (opts.length) {
@@ -174,6 +176,14 @@ function detail(id) {
       toast('Progress diperbarui'); closeM(); await loadData();
     }, e.target);
   }
+}
+function saveTarget(id, b) {
+  run(async () => {
+    const d = $('#tg1').value, g = $('#tg2').value, n = $('#tg3').value.trim();
+    if (!d && !g) throw new Error('Isi hari kerja atau tanggal target'); if (!n) throw new Error('Alasan perubahan wajib diisi');
+    await api('setTarget', {request_id: id, target_days: d || undefined, target_date: g || undefined, notes: n});
+    await loadData(); detail(id); toast('Target diperbarui');
+  }, b);
 }
 function addDocs(id, log_id, inp) {
   run(async () => { const files = await readFiles(inp); if (!files.length) return; toast('Mengunggah…'); await api('addDocs', {request_id: id, log_id, files}); await loadData(); detail(id); toast('Dokumen tersimpan'); });
@@ -187,11 +197,12 @@ function reqForm(id) {
   <input id="rc" class="inp" placeholder="Nama Customer" value="${esc(r.customer)}">
   <select id="rt" class="inp"><option>New</option><option ${r.type === 'Revisi' ? 'selected' : ''}>Revisi</option></select>
   ${isA() ? `<input id="rp" class="inp" placeholder="PIC Sales" value="${esc(r.pic_request || U.nama)}">` : ''}
+  ${id ? '' : `<div class="grid grid-cols-2 gap-2"><label class="text-xs text-slate-500">Target SPP Eksternal (hari kerja)<input id="rd" type="number" min="1" max="60" class="inp" value="${D.settings.sla_eksternal_days}"></label><label class="text-xs text-slate-500">Atau tanggal target (opsional)<input id="rg" type="date" class="inp"></label></div>`}
   <textarea id="rv" class="inp" rows="4" placeholder="Keterangan request / poin-poin revisi">${esc(r.poin_revisi)}</textarea>
   ${id ? '' : '<input id="rf" type="file" multiple accept=".pdf,.jpg,.jpeg,.png" class="inp"><p class="text-xs text-slate-500">Lampiran awal (opsional), bisa lebih dari satu file, maks 5 MB per file.</p>'}
   <div class="flex gap-2 justify-end"><button class="btn g" onclick="closeM()">Batal</button><button class="btn" id="rs">${id ? 'Simpan perubahan' : 'Kirim request'}</button></div></div>`);
   $('#rs').onclick = e => run(async () => {
-    const d = {customer: $('#rc').value.trim(), type: $('#rt').value, poin_revisi: $('#rv').value, pic: $('#rp') && $('#rp').value, pic_request: $('#rp') && $('#rp').value};
+    const d = {customer: $('#rc').value.trim(), type: $('#rt').value, poin_revisi: $('#rv').value, pic: $('#rp') && $('#rp').value, pic_request: $('#rp') && $('#rp').value, target_days: $('#rd') && $('#rd').value, target_date: $('#rg') && $('#rg').value};
     if (!d.customer) throw new Error('Nama customer wajib diisi');
     if (id) await api('adminAction', {op: 'editRequest', request_id: id, data: d, notes: 'Data request diedit'});
     else await api('createRequest', {...d, files: await readFiles($('#rf'))});
@@ -204,7 +215,7 @@ async function adminPanel() {
   const {users} = await api('adminAction', {op: 'listUsers'}), s = D.settings;
   openM(`<div class="flex justify-between mb-3"><h2 class="text-lg font-semibold">Pengaturan / Users</h2><button class="btn g" onclick="closeM()">Tutup</button></div>
   <h3 class="font-semibold mb-2">Parameter SLA</h3><div class="grid sm:grid-cols-3 gap-2 mb-2">
-  <label class="text-sm">SLA Eksternal (hari kerja)<input id="s1" type="number" min="0" class="inp" value="${s.sla_eksternal_days}"></label>
+  <label class="text-sm">SLA Eksternal default (hari kerja)<input id="s1" type="number" min="0" class="inp" value="${s.sla_eksternal_days}"></label>
   <label class="text-sm">SLA Internal (hari kerja)<input id="s2" type="number" min="0" class="inp" value="${s.sla_internal_days}"></label>
   <label class="text-sm">Pengingat Customer (hari)<input id="s3" type="number" min="0" class="inp" value="${s.customer_reminder_days}"></label></div>
   <label class="text-sm">ID Folder Google Drive<input id="s4" class="inp" value="${esc(s.drive_folder_id)}"></label>
