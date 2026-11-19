@@ -44,7 +44,7 @@ function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.remove
 function openM(h) { $('#mbox').innerHTML = h; $('#modal').classList.remove('hidden'); }
 function closeM() { $('#modal').classList.add('hidden'); }
 
-async function api(action, data = {}, auth = U && {username: U.username, password: U.password}) {
+async function api(action, data = {}, auth = U && (U.guest ? {guest: true} : {username: U.username, password: U.password})) {
   if (API_URL.startsWith('PASTE')) throw new Error('API_URL belum diisi di index.html');
   const r = await fetch(API_URL, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify({action, auth, ...data})});
   const j = await r.json(); if (!j.ok) throw new Error(j.error || 'Terjadi kesalahan'); return j;
@@ -86,7 +86,8 @@ function loginView() {
   <div class="text-center border-t-4 border-[#00853e] -mt-6 -mx-6 px-6 pt-6"><img src="logo.png" alt="Hanwa" class="h-14 mx-auto mb-2" onerror="this.style.display='none'"><div class="font-semibold text-[#00853e] leading-tight">PT HANWA STEEL SERVICE INDONESIA</div><h1 class="text-xl font-semibold mt-3">SPP Progress Control</h1><p class="text-sm text-slate-500">Masuk dengan akun yang diberikan Admin.</p></div>
   <input id="lu" class="inp" placeholder="Username" autocomplete="username" required>
   <input id="lp" type="password" class="inp" placeholder="Password" autocomplete="current-password" required>
-  <button class="btn w-full">Masuk</button></form></div><footer class="fixed bottom-0 inset-x-0 text-center text-xs text-slate-500 py-3">SPP Progress Control V1.0 © Sopari 2026</footer>`;
+  <button class="btn w-full">Masuk</button><div class="text-center text-xs text-slate-400">atau</div><button type="button" id="gb" class="btn g w-full">Masuk tanpa akun (Tamu)</button><p class="text-xs text-slate-500 text-center">Mode Tamu hanya untuk melihat data, tanpa bisa melakukan aksi apa pun.</p></form></div><footer class="fixed bottom-0 inset-x-0 text-center text-xs text-slate-500 py-3">SPP Progress Control V1.0 © Sopari 2026</footer>`;
+  $('#gb').onclick = e => run(async () => { const j = await api('login', {}, {guest: true}); U = {...j.user, guest: true}; sessionStorage.setItem('spp_u', JSON.stringify(U)); render(); }, e.target);
   $('#lf').onsubmit = e => { e.preventDefault(); run(async () => {
     const a = {username: $('#lu').value, password: $('#lp').value}, j = await api('login', {}, a);
     U = {...j.user, username: a.username.trim().toLowerCase(), password: a.password}; sessionStorage.setItem('spp_u', JSON.stringify(U)); render();
@@ -164,7 +165,7 @@ function detail(id) {
   <input id="ul" class="inp ${opts[0][1] === '6_DISTRIBUTED' ? '' : 'hidden'}" placeholder="Target Line Produksi" value="${esc(r.target_line)}">
   <input id="uf" type="file" multiple accept=".pdf,.jpg,.jpeg,.png" class="inp"><p class="text-xs text-slate-500">Bisa lebih dari satu file (maks 5 file, masing-masing 5 MB; PDF/JPG/PNG). Dokumen otomatis tersimpan pada tahap ini.</p>
   <textarea id="un" class="inp" rows="2" placeholder="Catatan"></textarea><button class="btn" id="ub">Simpan progress</button></div>`
-    : `<p class="text-sm text-slate-500 mb-3">${r.status_progress === '6_DISTRIBUTED' ? 'Request sudah selesai.' : 'Tidak ada aksi untuk role Anda pada status ini.'}</p>`}
+    : `<p class="text-sm text-slate-500 mb-3">${r.status_progress === '6_DISTRIBUTED' ? 'Request sudah selesai.' : (U.role === 'Guest' ? 'Mode tamu: hanya bisa melihat data.' : 'Tidak ada aksi untuk role Anda pada status ini.')}</p>`}
   ${['1_REQUESTED', '2_QC_EKSTERNAL'].includes(r.status_progress) && ['Sales', 'Admin'].includes(U.role) ? `<div class="border rounded p-3 mb-3 text-sm space-y-2"><div class="font-medium">Ubah Target SPP Eksternal <span class="font-normal text-slate-500">(saat ini ${dshort(r.target_eksternal_date)})</span></div><div class="grid grid-cols-2 gap-2"><input id="tg1" type="number" min="1" max="60" class="inp" placeholder="Hari kerja sejak tgl request"><input id="tg2" type="date" class="inp"></div><input id="tg3" class="inp" placeholder="Alasan perubahan (wajib)"><button class="btn g" onclick="saveTarget('${id}', this)">Simpan target</button></div>` : ''}
   ${isA() ? `<div class="flex gap-2 mb-4"><button class="btn g" onclick="reqForm('${id}')">Edit Data</button><button class="btn r" onclick="delReq('${id}')">Hapus Request</button></div>` : ''}
   </div><div><h3 class="font-semibold">Timeline Aktivitas</h3><p class="text-xs text-slate-500 mb-2">Dokumen hanya bisa ditambah pada tahap terakhir. Setelah tahap berikutnya diproses, dokumen terkunci.</p><ol class="space-y-2 text-sm">${logs.map(l => { const c = tlc(l.action_title); return `<li class="rounded-md p-2.5 border-l-4" style="background:${c[0]};border-color:${c[1]}"><div class="font-medium">${esc(l.action_title)}</div><div class="text-xs text-slate-600">${dshort(l.timestamp)} ${String(l.timestamp).slice(11, 16)} · ${esc(l.user_name)} (${esc(l.role)})</div>${l.catatan ? `<div class="mt-0.5">${esc(l.catatan)}</div>` : ''}${(() => { const ds = docsOf(l), can = l.log_id === lastId && (isA() || U.role === l.role || U.role === (r.status_progress === '3_WAITING_CUST' ? 'Sales' : 'QC')); return (ds.length || can) ? `<div class="flex flex-wrap gap-2 mt-1.5">${ds.map(d => `<a class="btn g !py-1" target="_blank" rel="noopener" title="${esc(d.n)}" href="${esc(d.u)}">${esc(d.n.length > 24 ? d.n.slice(0, 22) + '…' : d.n)}</a>`).join('')}${can ? `<label class="btn g !py-1 cursor-pointer">+ Tambah dokumen<input type="file" multiple class="hidden" accept=".pdf,.jpg,.jpeg,.png" onchange="addDocs('${id}','${l.log_id}',this)"></label>` : ''}</div>` : ''; })()}</li>`; }).join('') || '<li class="text-slate-500">Belum ada riwayat.</li>'}</ol></div></div>`);
@@ -219,19 +220,20 @@ async function adminPanel() {
   <label class="text-sm">SLA Internal (hari kerja)<input id="s2" type="number" min="0" class="inp" value="${s.sla_internal_days}"></label>
   <label class="text-sm">Pengingat Customer (hari)<input id="s3" type="number" min="0" class="inp" value="${s.customer_reminder_days}"></label></div>
   <label class="text-sm">ID Folder Google Drive<input id="s4" class="inp" value="${esc(s.drive_folder_id)}"></label>
+  <label class="text-sm flex items-center gap-2 mt-2"><input id="s6" type="checkbox" ${s.guest_access ? 'checked' : ''}>Izinkan masuk tanpa akun (Tamu, hanya melihat)</label>
   <label class="text-sm block mt-2">Hari libur (satu tanggal YYYY-MM-DD per baris)<textarea id="s5" rows="4" class="inp">${esc(s.hari_libur.join('\n'))}</textarea></label>
   <button class="btn mt-2 mb-5" id="ss">Simpan pengaturan</button>
   <h3 class="font-semibold mb-2">Akun Pengguna</h3><div class="overflow-x-auto mb-3"><table class="w-full text-sm"><tbody>${users.map(u => `<tr class="border-b"><td class="py-1">${esc(u.nama)}<div class="text-xs text-slate-500">${esc(u.username)}</div></td><td>${esc(u.role)}</td><td>${esc(u.status)}</td>
   <td class="text-right"><button class="btn g" onclick='userForm(${JSON.stringify(u).replace(/'/g, '&#39;')})'>Edit</button> <button class="btn r" onclick="delUser('${u.user_id}')">Hapus</button></td></tr>`).join('')}</tbody></table></div>
   <div id="uform"></div><button class="btn g" onclick="userForm({})">+ Tambah user</button>`);
   $('#ss').onclick = e => run(async () => {
-    await api('adminAction', {op: 'saveSettings', data: {sla_eksternal_days: +$('#s1').value, sla_internal_days: +$('#s2').value, customer_reminder_days: +$('#s3').value, drive_folder_id: $('#s4').value.trim(), hari_libur: $('#s5').value.split('\n').map(x => x.trim()).filter(Boolean)}});
+    await api('adminAction', {op: 'saveSettings', data: {sla_eksternal_days: +$('#s1').value, sla_internal_days: +$('#s2').value, customer_reminder_days: +$('#s3').value, drive_folder_id: $('#s4').value.trim(), guest_access: $('#s6').checked ? 'ON' : 'OFF', hari_libur: $('#s5').value.split('\n').map(x => x.trim()).filter(Boolean)}});
     await loadData(); toast('Pengaturan disimpan');
   }, e.target);
 }
 function userForm(u) {
   $('#uform').innerHTML = `<div class="border rounded p-3 mb-3 grid sm:grid-cols-2 gap-2"><input id="un1" class="inp" placeholder="Nama" value="${esc(u.nama)}"><input id="un2" class="inp" placeholder="Username" value="${esc(u.username)}">
-  <input id="un3" class="inp" placeholder="${u.user_id ? 'Password baru (kosongkan jika tidak diubah)' : 'Password'}"><select id="un4" class="inp">${['Sales', 'QC', 'Admin'].map(x => `<option ${u.role === x ? 'selected' : ''}>${x}</option>`).join('')}</select>
+  <input id="un3" class="inp" placeholder="${u.user_id ? 'Password baru (kosongkan jika tidak diubah)' : 'Password'}"><select id="un4" class="inp">${['Sales', 'QC', 'Admin', 'Guest'].map(x => `<option ${u.role === x ? 'selected' : ''}>${x}</option>`).join('')}</select>
   <select id="un5" class="inp"><option>Active</option><option ${u.status === 'Inactive' ? 'selected' : ''}>Inactive</option></select><button class="btn" id="usv">Simpan user</button></div>`;
   $('#usv').onclick = e => run(async () => {
     await api('adminAction', {op: 'saveUser', data: {user_id: u.user_id || '', nama: $('#un1').value.trim(), username: $('#un2').value, password: $('#un3').value, role: $('#un4').value, status: $('#un5').value}});
